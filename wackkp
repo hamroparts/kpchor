@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wack KP Chor</title>
+  <style>
+    :root { --cell: 110px; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; background:#111; color:#eee; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+    .card { background:#1b1b1b; border:1px solid #2a2a2a; border-radius:14px; padding:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .stat { display:flex; gap:14px; font-weight:700; }
+    .stat span { background:#141414; border:1px solid #2a2a2a; padding:8px 10px; border-radius:10px; }
+    button {
+      background:#2b6cff; color:#fff; border:0; padding:10px 14px;
+      border-radius:12px; font-weight:800; cursor:pointer;
+    }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    .grid {
+      margin-top: 14px;
+      display:grid;
+      grid-template-columns: repeat(3, var(--cell));
+      gap: 10px;
+      justify-content:center;
+    }
+    .hole {
+      width: var(--cell); height: var(--cell);
+      background:#0f0f0f;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      display:flex; align-items:center; justify-content:center;
+      position:relative;
+      overflow:hidden;
+      user-select:none;
+    }
+    .hole img {
+      width: 88%; height: 88%;
+      object-fit: contain;
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+      transition: 120ms ease;
+      pointer-events:none;
+      filter: drop-shadow(0 8px 10px rgba(0,0,0,0.35));
+    }
+    .hole.up img {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    .hole.hit {
+      outline: 3px solid rgba(255, 214, 0, 0.75);
+    }
+
+    /* Start screen */
+    .overlay {
+      position:fixed; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(0,0,0,0.78);
+      padding: 16px;
+    }
+    .startbox { max-width: 520px; width: 100%; text-align:center; }
+    h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: 0.5px; }
+    p { margin: 8px 0 14px; color:#bdbdbd; line-height: 1.35; }
+    .small { font-size: 12px; color:#9a9a9a; margin-top: 10px; }
+    .hint { font-size: 13px; color:#cfcfcf; margin-top: 8px; }
+    a { color:#8fb7ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div class="stat">
+          <span>Score: <b id="score">0</b></span>
+          <span>Time: <b id="time">30</b>s</span>
+        </div>
+        <div class="row" style="justify-content:flex-end;">
+          <button id="restartBtn" disabled>Restart</button>
+        </div>
+      </div>
+
+      <div class="grid" id="grid" aria-label="Wack a mole grid"></div>
+
+      <div class="hint">
+        Click the popping image. Before hit = single image. After hit = random image from your hit image list.
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Page -->
+  <div class="overlay" id="overlay">
+    <div class="card startbox">
+      <h1>Wack KP Chor</h1>
+      <p>
+        A simple whack-a-mole style game.<br/>
+        Replace the image placeholders in the script with your own files.
+      </p>
+      <button id="startBtn">Start</button>
+      <div class="small">
+        Note: Browsers require a user gesture before sounds can play.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /***********************
+     * 1) IMAGE PLACEHOLDERS
+     ***********************/
+    // BEFORE HIT (single/idle image):
+    const idleImageSrc = "YOUR_IDLE_IMAGE.png"; // <-- replace (e.g., "img/kp-idle.png")
+
+    // AFTER HIT (multiple images from path):
+    const hitImageSrcList = [
+      "PATH_TO_HIT_IMAGE_1.png", // e.g., "img/kp-hit-1.png"
+      "PATH_TO_HIT_IMAGE_2.png",
+      "PATH_TO_HIT_IMAGE_3.png"
+    ];
+
+    /***********************
+     * 2) ONLINE SOUND URLS
+     ***********************/
+    // Punch sound (online, no local file):
+    const punchSoundUrl = "https://www.myinstants.com/media/sounds/punch-sound-effect.mp3"; // :contentReference[oaicite:0]{index=0}
+    // Funny “cry” sound (online, no local file):
+    const crySoundUrl   = "https://www.myinstants.com/media/sounds/funnycrying.mp3";       // :contentReference[oaicite:1]{index=1}
+
+    // Create audio objects (will only play after user clicks Start / hits something)
+    const punchAudio = new Audio(punchSoundUrl);
+    const cryAudio   = new Audio(crySoundUrl);
+    punchAudio.preload = "auto";
+    cryAudio.preload = "auto";
+
+    /***********************
+     * 3) GAME SETTINGS
+     ***********************/
+    const GAME_SECONDS = 30;
+    const GRID_SIZE = 9; // 3x3
+    const POP_MIN_MS = 450;
+    const POP_MAX_MS = 900;
+
+    let score = 0;
+    let timeLeft = GAME_SECONDS;
+    let gameRunning = false;
+
+    let popTimer = null;
+    let tickTimer = null;
+    let activeIndex = -1;
+    let canHit = true;
+
+    const elScore = document.getElementById("score");
+    const elTime = document.getElementById("time");
+    const elGrid = document.getElementById("grid");
+    const overlay = document.getElementById("overlay");
+    const startBtn = document.getElementById("startBtn");
+    const restartBtn = document.getElementById("restartBtn");
+
+    // Build grid
+    const holes = [];
+    for (let i = 0; i < GRID_SIZE; i++) {
+      const hole = document.createElement("div");
+      hole.className = "hole";
+      hole.dataset.idx = String(i);
+
+      const img = document.createElement("img");
+      img.alt = "target";
+      img.src = idleImageSrc; // idle by default
+      hole.appendChild(img);
+
+      hole.addEventListener("click", () => onHoleClick(i));
+      elGrid.appendChild(hole);
+      holes.push({ hole, img });
+    }
+
+    function randBetween(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function pickHitImage() {
+      if (!hitImageSrcList.length) return idleImageSrc;
+      return hitImageSrcList[Math.floor(Math.random() * hitImageSrcList.length)];
+    }
+
+    function setActive(idx) {
+      // clear previous
+      if (activeIndex >= 0) {
+        holes[activeIndex].hole.classList.remove("up");
+        holes[activeIndex].hole.classList.remove("hit");
+        holes[activeIndex].img.src = idleImageSrc; // back to idle image
+      }
+      activeIndex = idx;
+
+      // show new
+      holes[idx].img.src = idleImageSrc; // still idle until hit
+      holes[idx].hole.classList.add("up");
+      canHit = true;
+    }
+
+    function hideActive() {
+      if (activeIndex >= 0) {
+        holes[activeIndex].hole.classList.remove("up");
+        holes[activeIndex].hole.classList.remove("hit");
+        holes[activeIndex].img.src = idleImageSrc;
+        activeIndex = -1;
+      }
+    }
+
+    async function playSound(audioObj) {
+      try {
+        audioObj.currentTime = 0;
+        await audioObj.play();
+      } catch (e) {
+        // Ignore play errors (usually due to autoplay policy if user never clicked Start)
+      }
+    }
+
+    function onHoleClick(idx) {
+      if (!gameRunning) return;
+      if (idx !== activeIndex) return;
+      if (!canHit) return;
+      canHit = false;
+
+      // score
+      score += 1;
+      elScore.textContent = String(score);
+
+      // after hit: switch to one of the hit images
+      holes[idx].img.src = pickHitImage();
+      holes[idx].hole.classList.add("hit");
+
+      // sounds: punch + funny cry
+      playSound(punchAudio);
+      // slight delay so it stacks nicer
+      setTimeout(() => playSound(cryAudio), 80);
+
+      // pop down quickly after hit
+      setTimeout(() => hideActive(), 220);
+    }
+
+    function schedulePop() {
+      if (!gameRunning) return;
+
+      const next = randBetween(POP_MIN_MS, POP_MAX_MS);
+      popTimer = setTimeout(() => {
+        // choose a new hole (avoid repeating)
+        let idx = randBetween(0, GRID_SIZE - 1);
+        if (GRID_SIZE > 1) {
+          while (idx === activeIndex) idx = randBetween(0, GRID_SIZE - 1);
+        }
+        setActive(idx);
+
+        // auto-hide if not hit
+        const visibleFor = randBetween(500, 950);
+        setTimeout(() => {
+          // only hide if still active and not already hit-hidden
+          if (gameRunning && activeIndex === idx) hideActive();
+        }, visibleFor);
+
+        schedulePop();
+      }, next);
+    }
+
+    function startGame() {
+      // reset
+      score = 0;
+      timeLeft = GAME_SECONDS;
+      gameRunning = true;
+      activeIndex = -1;
+      canHit = true;
+
+      elScore.textContent = "0";
+      elTime.textContent = String(GAME_SECONDS);
+      restartBtn.disabled = false;
+
+      // close start overlay
+      overlay.style.display = "none";
+
+      // timers
+      schedulePop();
+      tickTimer = setInterval(() => {
+        timeLeft -= 1;
+        elTime.textContent = String(timeLeft);
+        if (timeLeft <= 0) stopGame();
+      }, 1000);
+    }
+
+    function stopGame() {
+      gameRunning = false;
+      hideActive();
+      clearTimeout(popTimer);
+      clearInterval(tickTimer);
+
+      // show overlay again
+      overlay.style.display = "flex";
+      startBtn.textContent = "Play Again";
+    }
+
+    startBtn.addEventListener("click", () => startGame());
+    restartBtn.addEventListener("click", () => {
+      // hard restart without overlay
+      overlay.style.display = "none";
+      clearTimeout(popTimer);
+      clearInterval(tickTimer);
+      holes.forEach(h => {
+        h.hole.classList.remove("up", "hit");
+        h.img.src = idleImageSrc;
+      });
+      startGame();
+    });
+  </script>
+</body>
+</html>
