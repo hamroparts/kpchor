@@ -107,13 +107,13 @@
      * 1) IMAGE PLACEHOLDERS
      ***********************/
     // BEFORE HIT (single/idle image):
-    const idleImageSrc = "YOUR_IDLE_IMAGE.png"; // <-- replace (e.g., "img/kp-idle.png")
+    const idleImageSrc = "kpchor/wackkp/KP Oli.jpg"; // <-- replace (e.g., "img/kp-idle.png")
 
     // AFTER HIT (multiple images from path):
     const hitImageSrcList = [
-      "PATH_TO_HIT_IMAGE_1.png", // e.g., "img/kp-hit-1.png"
-      "PATH_TO_HIT_IMAGE_2.png",
-      "PATH_TO_HIT_IMAGE_3.png"
+      "kpchor/wackkp/Oli 1.jpg", // e.g., "img/kp-hit-1.png"
+      "kpchor/wackkp/Oli 2.jpg",
+      "kpchor/wackkp/Oli 3.png"
     ];
 
     /***********************
@@ -308,4 +308,5 @@
     });
   </script>
 </body>
+
 </html>
